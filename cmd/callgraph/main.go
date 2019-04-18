@@ -31,6 +31,8 @@ import (
 	"os"
 	"runtime"
 	"text/template"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/callgraph"
@@ -57,6 +59,9 @@ var (
 
 	ptalogFlag = flag.String("ptalog", "",
 		"Location of the points-to analysis log file, or empty to disable logging.")
+
+	pathFlag = flag.String("path", "",
+		"Limit output to packages in path")
 )
 
 func init() {
@@ -156,7 +161,7 @@ func init() {
 
 func main() {
 	flag.Parse()
-	if err := doCallgraph("", "", *algoFlag, *formatFlag, *testFlag, flag.Args()); err != nil {
+	if err := doCallgraph("", "", *algoFlag, *formatFlag, *testFlag, *pathFlag, flag.Args()); err != nil {
 		fmt.Fprintf(os.Stderr, "callgraph: %s\n", err)
 		os.Exit(1)
 	}
@@ -164,10 +169,14 @@ func main() {
 
 var stdout io.Writer = os.Stdout
 
-func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) error {
+func doCallgraph(dir, gopath, algo, format string, tests bool, pathFlag string, args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, Usage)
 		return nil
+	}
+
+	if pathFlag != "" {
+		pathFlag, _ = filepath.Abs(pathFlag)
 	}
 
 	cfg := &packages.Config{
@@ -286,6 +295,10 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		data.edge = edge
 		data.Caller = edge.Caller.Func
 		data.Callee = edge.Callee.Func
+
+		if pathFlag != "" && !strings.HasPrefix(data.pos().Filename, pathFlag) {
+			return nil
+		}
 
 		buf.Reset()
 		if err := tmpl.Execute(&buf, &data); err != nil {
